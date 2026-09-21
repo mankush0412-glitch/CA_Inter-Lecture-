@@ -1,0 +1,69 @@
+# ── Core (required) ──────────────────────────────────────────────────────────
+BOT_TOKEN=your_bot_token_here
+MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/edu_bot?retryWrites=true&w=majority
+# On Render, leave this blank and use Render's auto-provided
+# RENDER_EXTERNAL_URL. Set WEB_URL only for a custom domain or another host.
+WEB_URL=
+OWNER_ID=123456789
+STORAGE_CHANNEL_ID=-1003296779450
+
+# ── Force-join gate (optional) ───────────────────────────────────────────────
+# Comma-separated channel IDs users must join before using the bot. Leave blank to disable.
+FORCE_JOIN_CHANNELS=-1002553212331,-1003374353864
+# Optional: comma-separated invite links / display names matching FORCE_JOIN_CHANNELS,
+# in the same order, used to render the join-gate screen nicely. Leave blank to fall
+# back to generic labels.
+FORCE_JOIN_CHANNEL_LINKS=
+FORCE_JOIN_CHANNEL_NAMES=
+
+# ── Groups & logging (optional) ──────────────────────────────────────────────
+# Group chat_id where payment approval requests are posted.
+PAYMENT_GROUP_ID=
+# Group chat_id for real-time lecture-call logs (who requested what, when).
+# Leave blank to skip logging.
+LOGS_GROUP_ID=
+
+# ── Payments — UPI (BharatPe/manual QR) ──────────────────────────────────────
+UPI_ID=
+# Payee name shown in the UPI app (pn= param). Falls back to a generic name if blank.
+UPI_NAME=
+# "bharatpe" (default) or "paytm" — selects which flow /api/config and the
+# payment-verification routes use.
+PAYMENT_PROVIDER=bharatpe
+# API key for the BharatPe/devport order-status lookup (used to auto-verify
+# payments instead of calling Paytm's Order Status API directly). Only needed
+# when PAYMENT_PROVIDER=bharatpe.
+DEVPORT_API_KEY=
+
+# ── Payments — Paytm (only needed when PAYMENT_PROVIDER=paytm) ──────────────
+PAYTM_MID=
+PAYTM_MERCHANT_KEY=
+PAYTM_WEBSITE=
+PAYTM_CHANNEL_ID=
+PAYTM_INDUSTRY_TYPE=
+PAYTM_CALLBACK_URL=
+# "production" (default) or "staging"
+PAYTM_ENV=production
+
+# ── Support / contact ─────────────────────────────────────────────────────────
+# Shown as the "Contact Support" link in the app. Falls back to https://t.me/<bot username> if blank.
+CONTACT_LINK=
+
+# ── Ads ───────────────────────────────────────────────────────────────────────
+# Monetag ad zone ID. The frontend loads the Monetag SDK with this zone via
+# /api/config instead of it being hardcoded in index.html, so it can be
+# changed here without touching frontend code.
+MONETAG_ZONE_ID=11115372
+
+# ── Storage backend (optional — auto-detected sensible defaults) ────────────
+# SQLite is used as EduBot's primary store (fast local reads; MongoDB stays in sync
+# as a backup) UNLESS running on Render (auto-detected via RENDER_SERVICE_ID/
+# RENDER, since Render's disk is ephemeral) or USE_SQLITE is explicitly "false"
+# — in either case only MongoDB is used. You normally don't need to set
+# anything here on a regular VPS/EC2 box; only touch these if you want to
+# override the auto-detected path or force MongoDB-only mode.
+# USE_SQLITE=false
+# SQLITE_PATH=./bot_cache.db
+
+# ── Platform (usually set automatically by your host, not by you) ───────────
+PORT=3000
