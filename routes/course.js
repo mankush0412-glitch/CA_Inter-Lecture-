@@ -1521,6 +1521,63 @@ async function getChannelInfo(chatId, botToken) {
   } catch (e) { return { title: '', username: '', photoUrl: null, redirectLink: null, cachedAt: now }; }
 }
 
+// ── Force Join membership check ──────────────────────────────────────────────
+// FIX: previously ANY Telegram error (429 rate-limit, network blip, etc.) was
+// swallowed and shown to the user as "Not joined yet". Now:
+//   • errors are retried (429 respects retry_after) and never treated as "not joined"
+//   • 'restricted' users who are still members (muted in groups) count as joined
+//   • a positive result is cached, so repeated verifies don't hammer Telegram
+//   • if Telegram still can't answer, we use the last known result, else let the
+//     user through (fail-open) instead of wrongly blocking a real member
+const _memberCache = new Map(); // "chatId:userId" -> { joined, at }
+const MEMBER_FRESH_MS = 2 * 60 * 1000;        // reuse a "joined" result this long
+const MEMBER_STALE_OK_MS = 24 * 60 * 60 * 1000; // fallback if Telegram errors out
+function _fjSleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function checkMembership(chatId, userId, botToken) {
+  const key = chatId + ':' + userId;
+  const cached = _memberCache.get(key);
+  if (cached && cached.joined && Date.now() - cached.at < MEMBER_FRESH_MS) {
+    return { joined: true, status: 'cached', error: false };
+  }
+  let lastErr = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${botToken}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`, { signal: AbortSignal.timeout(8000) });
+      const d = await r.json();
+      if (d && d.ok && d.result) {
+        const st = d.result.status;
+        const joined = ['member', 'administrator', 'creator'].includes(st) ||
+                       (st === 'restricted' && d.result.is_member !== false);
+        _memberCache.set(key, { joined, at: Date.now() });
+        return { joined, status: st, error: false };
+      }
+      lastErr = (d && d.description) || ('HTTP ' + r.status);
+      const desc = String(lastErr).toLowerCase();
+      // A definite "this user is not in the chat" answer — not a failure
+      if (desc.includes('participant_id_invalid') || desc.includes('user not found')) {
+        _memberCache.set(key, { joined: false, at: Date.now() });
+        return { joined: false, status: 'not_member', error: false };
+      }
+      if (d && d.error_code === 429) {
+        const wait = Math.min(((d.parameters && d.parameters.retry_after) || 1), 3) * 1000;
+        await _fjSleep(wait);
+        continue;
+      }
+      await _fjSleep(300 * attempt);
+    } catch (e) {
+      lastErr = e.message;
+      await _fjSleep(300 * attempt);
+    }
+  }
+  // Telegram couldn't answer — do NOT tell the user they haven't joined.
+  console.error(`[force-join] getChatMember failed chat=${chatId} user=${userId}: ${lastErr}`);
+  if (cached && Date.now() - cached.at < MEMBER_STALE_OK_MS) {
+    return { joined: cached.joined, status: 'stale', error: true };
+  }
+  return { joined: true, status: 'check_error', error: true };
+}
+
 router.post('/force-join/check', async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'userId required' });
@@ -1528,14 +1585,12 @@ router.post('/force-join/check', async (req, res) => {
   if (!channels.length) return res.json({ allJoined: true, channels: [] });
   const BOT_TOKEN = process.env.BOT_TOKEN;
   if (!BOT_TOKEN) return res.status(500).json({ error: 'BOT_TOKEN not set' });
-  const results = await Promise.all(channels.map(async (ch) => {
-    const [memberData, info] = await Promise.all([
-      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getChatMember?chat_id=${encodeURIComponent(ch.id)}&user_id=${encodeURIComponent(userId)}`).then(r => r.json()).catch(() => ({})),
+  const results = await Promise.all(channels.map(async (ch, idx) => {
+    const [m, info] = await Promise.all([
+      checkMembership(ch.id, userId, BOT_TOKEN),
       getChannelInfo(ch.id, BOT_TOKEN),
     ]);
-    const status = memberData.result && memberData.result.status;
-    const joined = ['member','administrator','creator'].includes(status);
-    return { id: ch.id, name: ch.name !== ('Channel '+(channels.indexOf(ch)+1)) ? ch.name : (info.title||ch.name), link: ch.link||info.redirectLink||null, photoUrl: info.photoUrl||null, joined, status: status||'not_member' };
+    return { id: ch.id, name: ch.name !== ('Channel ' + (idx + 1)) ? ch.name : (info.title || ch.name), link: ch.link || info.redirectLink || null, photoUrl: info.photoUrl || null, joined: m.joined, status: m.status };
   }));
   res.json({ allJoined: results.every(c => c.joined), channels: results });
 });
